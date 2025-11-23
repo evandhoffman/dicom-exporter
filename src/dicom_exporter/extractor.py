@@ -3,6 +3,7 @@
 This module extracts a zip archive to a temporary directory, scans files and copies
 those that are valid DICOM files into the provided output directory.
 """
+
 from __future__ import annotations
 
 import logging
@@ -41,7 +42,9 @@ def _unique_path(out_dir: str, filename: str) -> str:
     return os.path.join(out_dir, candidate)
 
 
-def extract_from_zip(zip_path: str, out_dir: str, overwrite: bool = False, verbose: bool = False) -> List[str]:
+def extract_from_zip(
+    zip_path: str, out_dir: str, overwrite: bool = False, verbose: bool = False
+) -> List[str]:
     """Extract DICOM files from `zip_path` into `out_dir`.
 
     Returns a list of written file paths.

@@ -1,37 +1,60 @@
-"""Command-line interface for dicom-exporter."""
+"""Command-line interface for dicom-exporter using argparse.
+
+This CLI is intentionally small and uses the standard library `argparse` so
+there are no external runtime dependencies for argument parsing.
+"""
+
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
-from typing import Optional
-
-import click
+from typing import List
 
 from .extractor import extract_from_zip
 
 
-@click.command()
-@click.argument("zipfile", type=click.Path(exists=True, dir_okay=False))
-@click.argument("outdir", type=click.Path(file_okay=False))
-@click.option("--overwrite", is_flag=True, help="Overwrite existing files in output dir")
-@click.option("-v", "--verbose", is_flag=True, help="Verbose logging")
-def main(zipfile: str, outdir: str, overwrite: bool, verbose: bool) -> None:
-    """Extract DICOM files from ZIPFILE into OUTDIR.
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="dicom-extract",
+        description="Extract DICOM files from a ZIP archive",
+    )
+    parser.add_argument("zipfile", help="Path to exporter ZIP file")
+    parser.add_argument(
+        "outdir", help="Destination directory for extracted DICOM files"
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing files in output dir",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
+    return parser
 
-    Example: dicom-extract archive.zip /tmp/out
+
+def main(argv: List[str] | None = None) -> int:
+    """Parse args and run the extractor.
+
+    Returns an exit code that can be passed to `sys.exit()` by callers.
     """
-    logging.basicConfig(level=(logging.INFO if verbose else logging.WARNING), format="%(message)s")
+    args = build_parser().parse_args(argv)
 
-    extracted = extract_from_zip(zipfile, outdir, overwrite=overwrite, verbose=verbose)
+    logging.basicConfig(
+        level=(logging.INFO if args.verbose else logging.WARNING), format="%(message)s"
+    )
+
+    extracted = extract_from_zip(
+        args.zipfile, args.outdir, overwrite=args.overwrite, verbose=args.verbose
+    )
     if extracted:
-        click.echo(f"Extracted {len(extracted)} DICOM file(s) to: {outdir}")
+        print(f"Extracted {len(extracted)} DICOM file(s) to: {args.outdir}")
         for p in extracted:
-            click.echo(f" - {p}")
-        sys.exit(0)
+            print(f" - {p}")
+        return 0
     else:
-        click.echo("No DICOM files found in archive.", err=True)
-        sys.exit(2)
+        print("No DICOM files found in archive.", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

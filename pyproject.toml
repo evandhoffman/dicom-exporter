@@ -10,8 +10,11 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "pydicom>=2.3.0",
-    "click>=8.0.0",
 ]
+
+[tool.black]
+line-length = 88
+# Black currently doesn't list py313 specifically; rely on default behavior for target versions.
 
 [project.scripts]
 dicom-extract = "dicom_exporter.cli:main"

@@ -87,8 +87,9 @@ Example contract for functions:
 ## CLI and packaging
 
 - The console script entry point is `dicom-extract` (configured via `pyproject.toml`).
-- Keep the CLI thin: parsing, validation, logging, and delegation to functions in
-  `src/dicom_exporter/`.
+- The CLI uses the standard library `argparse` for argument parsing (no external CLI
+  dependencies). Keep the CLI thin: parsing, validation, logging, and delegation to
+  functions in `src/dicom_exporter/`.
 
 ## CI and reproducibility
 
