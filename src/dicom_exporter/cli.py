@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import os
 from typing import List
 
 from .extractor import extract_from_zip
@@ -19,9 +20,17 @@ def build_parser() -> argparse.ArgumentParser:
         prog="dicom-extract",
         description="Extract DICOM files from a ZIP archive",
     )
-    parser.add_argument("zipfile", help="Path to exporter ZIP file")
     parser.add_argument(
-        "outdir", help="Destination directory for extracted DICOM files"
+        "--input-file",
+        dest="input_file",
+        required=True,
+        help="Path to exporter input file (ZIP or ISO)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        required=True,
+        help="Destination directory for extracted DICOM files",
     )
     parser.add_argument(
         "--overwrite",
@@ -43,11 +52,31 @@ def main(argv: List[str] | None = None) -> int:
         level=(logging.INFO if args.verbose else logging.WARNING), format="%(message)s"
     )
 
-    extracted = extract_from_zip(
-        args.zipfile, args.outdir, overwrite=args.overwrite, verbose=args.verbose
-    )
+    # Basic extension check: allow .zip or .iso (case-insensitive)
+    ext = os.path.splitext(args.input_file)[1].lower()
+    if ext not in (".zip", ".iso"):
+        print(
+            "Input file must have extension .zip or .iso (case-insensitive)",
+            file=sys.stderr,
+        )
+        return 2
+
+    if ext == ".zip":
+        extracted = extract_from_zip(
+            args.input_file,
+            args.output_dir,
+            overwrite=args.overwrite,
+            verbose=args.verbose,
+        )
+    else:
+        # ISO support not implemented yet; surface a clear error for now.
+        print(
+            "ISO input detected but ISO extraction is not implemented yet.",
+            file=sys.stderr,
+        )
+        return 3
     if extracted:
-        print(f"Extracted {len(extracted)} DICOM file(s) to: {args.outdir}")
+        print(f"Extracted {len(extracted)} DICOM file(s) to: {args.output_dir}")
         for p in extracted:
             print(f" - {p}")
         return 0
