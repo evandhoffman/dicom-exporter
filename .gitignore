@@ -1,5 +1,21 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+env/
+
+# Temporary files
+*.tmp
+*.log
+# Byte-compiled / optimized / DLL files
+__pycache__/
 *.py[codz]
 *$py.class
 
@@ -205,3 +221,82 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# -----------------------------------------------------------------------------
+# Sensitive data, keys, user files, caches and binaries
+# Do NOT commit secrets, private keys, credentials, or local runtime state
+# -----------------------------------------------------------------------------
+
+# Environment files and secrets
+.env
+.env.*
+*.env
+.env.local
+local.settings.json
+secrets.yml
+secrets.yaml
+credentials.yml
+
+# SSH keys and credentials
+.ssh/
+id_rsa
+id_rsa.pub
+id_dsa
+id_ecdsa
+id_ed25519
+.netrc
+
+# TLS / cert files
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+
+# GPG / PGP
+*.gpg
+*.asc
+
+# Cloud provider credentials / state
+.aws/
+.gcloud/
+.azure/
+credentials/
+
+# Docker sensitive config
+.docker/
+.docker/config.json
+**/.docker/config.json
+
+# Terraform state (contains secrets)
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+*.tfstate.backup
+
+# Caches and local runtime state
+.cache/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+ENV/
+__pypackages__/
+
+# OS and editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Binaries and large files
+*.exe
+*.dll
+*.so
+*.dylib
+*.bin
+*.iso
+*.img
+
