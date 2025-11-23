@@ -91,11 +91,62 @@ Example contract for functions:
   dependencies). Keep the CLI thin: parsing, validation, logging, and delegation to
   functions in `src/dicom_exporter/`.
 
+## Logging
+
+- Use the standard library `logging` module for all runtime messages. Do not use
+  `print()` for normal program output or diagnostics; reserve `print()` only for
+  user-facing output when appropriate. The CLI should configure logging (for
+  example via a `--verbose` flag) and libraries should obtain a logger with
+  `logger = logging.getLogger(__name__)` and call `logger.debug/info/warning/error`.
+- Keep logs at appropriate levels:
+  - `DEBUG` for detailed developer-level trace information.
+  - `INFO` for high-level progress and successful operations.
+  - `WARNING` for recoverable issues.
+  - `ERROR` for failures.
+- Configure a simple, readable formatter for CLI mode (for example `%(levelname)s: %(message)s`).
+- For production or machine-readable logs, consider JSON formatting. Use a
+  pluggable handler so the format can be swapped without changing library code.
+- When extracting archives or performing file IO, log the following events at
+  the indicated levels:
+  - `INFO`: start and finish of archive extraction, number of files extracted,
+    final output directory.
+  - `DEBUG`: temp directory locations, individual files processed, skipped files.
+  - `ERROR`: extraction failures, mount failures, permission problems.
+- Propagate logging configuration from the CLI; libraries should not call
+  `basicConfig()` — only the top-level CLI entry should configure logging.
+- Tests should capture logs (pytest `caplog`) when asserting on logging output.
+
+
 ## CI and reproducibility
 
 - CI should pin Python to `3.13.2` (use the official `setup-python` action or Docker image).
 - CI tasks should install dependencies, run `mypy` (if enabled), run formatters as checks,
   and run `pytest`.
+
+## Cross-platform support
+
+- Although development will commonly happen on macOS, this project must run
+  reliably on Linux and Windows as well, and inside containers. When making
+  implementation choices, prefer cross-platform libraries and the Python
+  standard library over OS-specific tools.
+- Avoid macOS-only commands (for example `hdiutil`) in library code. If ISO
+  handling is required on multiple OSes, prefer a pure-Python library such as
+  `pycdlib` to read ISO contents programmatically rather than mounting images.
+- Use `pathlib.Path` or `os.path` for path operations. Do not hardcode `/tmp`
+  in code — use `tempfile.gettempdir()` to locate the system temp directory and
+  `os.path.join()` (or `Path`) to construct paths.
+- Be mindful of Windows differences: path separators, max path length, case
+  sensitivity, and file locking semantics. Use binary-safe file operations and
+  ensure tests run on Windows or in a Windows CI runner when possible.
+- For temporary extraction directories, follow the deterministic naming
+  convention described in the project, but build the path using the system
+  temp directory API rather than a literal `/tmp` prefix so it works on all
+  platforms.
+- Test cross-platform behavior in CI with a matrix that includes at least
+  macOS, Ubuntu (or Debian), and Windows runners. Also validate behavior
+  inside a Linux container image (Docker) since that is a common deployment
+  environment.
+
 
 ## Contribution notes
 

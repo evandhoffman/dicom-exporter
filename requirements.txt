@@ -6,4 +6,7 @@ pytest>=7.0.0
 black>=24.0.0
 pre-commit>=3.0.0
 
+# ISO support
+pycdlib>=1.0.0
+
 

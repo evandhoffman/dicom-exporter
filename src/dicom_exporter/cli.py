@@ -63,10 +63,7 @@ def main(argv: List[str] | None = None) -> int:
 
     if ext == ".zip":
         extracted = extract_from_zip(
-            args.input_file,
-            args.output_dir,
-            overwrite=args.overwrite,
-            verbose=args.verbose,
+            args.input_file, args.output_dir, overwrite=args.overwrite
         )
     else:
         # ISO support not implemented yet; surface a clear error for now.
