@@ -34,28 +34,32 @@ Notes:
 
 ## Run in Docker
 
-Use Docker when you want a portable, reproducible environment. Example `Dockerfile` (suggested base):
-
-```dockerfile
-FROM python:3.13.2-slim
-WORKDIR /app
-COPY pyproject.toml requirements.txt README.md /app/
-COPY src/ /app/src/
-RUN python -m pip install --upgrade pip \
-    && pip install -r requirements.txt
-ENTRYPOINT ["dicom-extract"]
-CMD ["--help"]
-```
+Use Docker when you want a portable, reproducible environment. A `Dockerfile` is
+provided in the repository root.
 
 Build and run:
 
 ```bash
+# Build the image
 docker build -t dicom-exporter:latest .
-docker run --rm -v $(pwd)/example:/data dicom-exporter:latest /data/archive.zip /data/out
+
+# Run with volume mount for input/output
+docker run --rm -v $(pwd)/data:/data dicom-exporter:latest \
+  --input-file /data/archive.iso \
+  --convert-to-png
+
+# The tool works in /data by default, so map your local directory there
 ```
 
-Adjust volume mounts and the `ENTRYPOINT` as needed. Using Docker ensures the exact
-Python runtime (3.13.2) is used consistently.
+The Dockerfile:
+- Uses `python:3.13.2-slim` as the base image
+- Installs system fonts (DejaVu) for PNG metadata rendering
+- Installs the package and all dependencies
+- Sets `/data` as the working directory
+- Configures `dicom-extract` as the entrypoint
+
+Adjust volume mounts as needed. Using Docker ensures the exact Python runtime
+(3.13.2) and all system dependencies are consistent across environments.
 
 ## Type hints and static typing
 
@@ -90,6 +94,43 @@ Example contract for functions:
 - The CLI uses the standard library `argparse` for argument parsing (no external CLI
   dependencies). Keep the CLI thin: parsing, validation, logging, and delegation to
   functions in `src/dicom_exporter/`.
+
+## Features and functionality
+
+### DICOM Extraction
+- Extracts DICOM files from ZIP or ISO archives
+- Uses `zipfile` (stdlib) for ZIP and `pycdlib` for cross-platform ISO support
+- Validates files with `pydicom` before copying
+- Supports deterministic temp directory extraction with skip-if-exists optimization
+
+### PNG Conversion (--convert-to-png)
+- Converts DICOM pixel data to PNG using `numpy` and `Pillow`
+- Overlays metadata on images: PatientName, PatientID, StudyDate, SeriesDescription,
+  Modality, SliceLocation, InstanceNumber
+- Normalizes pixel arrays to 0-255 range for display
+- Attempts to use system fonts (Helvetica on macOS, DejaVu Sans on Linux) with fallback
+- Handles files without pixel data gracefully (e.g., DICOMDIR)
+
+### HTML Gallery Generation
+- Automatically generates `index.html` in the PNG export directory
+- Features:
+  - Groups images by Series (SeriesNumber and SeriesDescription)
+  - Sorts by SliceLocation and InstanceNumber within each series
+  - Responsive grid layout with image cards
+  - Full-screen modal viewer with keyboard navigation (Escape, Left/Right arrows)
+  - Patient metadata header
+  - Modern CSS with gradients and hover effects
+- Gallery is regenerated on every run to ensure it's up-to-date
+
+### Directory Structure
+When `--output-dir` is not specified:
+- DICOM files → `/tmp/<basename>_iso/` (or `_zip`)
+- PNG exports → `<iso_directory>/<basename>_iso_export/`
+- This allows PNG files to be saved alongside the original archive
+
+When `--output-dir` is specified:
+- DICOM files → specified directory
+- PNG exports → `<output-dir>/export/`
 
 ## Logging
 
