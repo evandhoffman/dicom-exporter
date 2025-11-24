@@ -61,17 +61,10 @@ def main(argv: List[str] | None = None) -> int:
         )
         return 2
 
-    if ext == ".zip":
-        extracted = extract_from_zip(
-            args.input_file, args.output_dir, overwrite=args.overwrite
-        )
-    else:
-        # ISO support not implemented yet; surface a clear error for now.
-        print(
-            "ISO input detected but ISO extraction is not implemented yet.",
-            file=sys.stderr,
-        )
-        return 3
+    extracted = extract_from_zip(
+        args.input_file, args.output_dir, overwrite=args.overwrite
+    )
+
     if extracted:
         print(f"Extracted {len(extracted)} DICOM file(s) to: {args.output_dir}")
         for p in extracted:

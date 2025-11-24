@@ -98,13 +98,30 @@ def extract_from_archive(
             iso.open(input_path)
 
             def _extract_iso_dir(
-                iso_obj: pycdlib.PyCdlib, iso_path: str, out_path: str
+                iso_obj: pycdlib.PyCdlib,
+                iso_path: str,
+                out_path: str,
+                path_type: str = "iso_path",
             ) -> None:
+                """
+                Recursively extract directory from ISO.
+                path_type can be 'iso_path', 'joliet_path', or 'rr_name'
+                """
                 try:
-                    children = iso_obj.list_children(iso_path)
-                except Exception:
-                    # If list_children is unavailable or fails, bail out
-                    logger.error("pycdlib failed to list children for %s", iso_path)
+                    # List children using the specified path type
+                    if path_type == "joliet_path":
+                        children = iso_obj.list_children(joliet_path=iso_path)
+                    elif path_type == "rr_name":
+                        children = iso_obj.list_children(rr_name=iso_path)
+                    else:
+                        children = iso_obj.list_children(iso_path=iso_path)
+                except Exception as e:
+                    logger.error(
+                        "pycdlib failed to list children for %s (type=%s): %s",
+                        iso_path,
+                        path_type,
+                        e,
+                    )
                     return
 
                 for child in children:
@@ -121,12 +138,24 @@ def extract_from_archive(
                     dst = os.path.join(out_path, name)
                     if getattr(child, "is_dir", lambda: False)():
                         os.makedirs(dst, exist_ok=True)
-                        _extract_iso_dir(iso_obj, src_iso_path, dst)
+                        _extract_iso_dir(iso_obj, src_iso_path, dst, path_type)
                     else:
                         os.makedirs(os.path.dirname(dst), exist_ok=True)
                         with open(dst, "wb") as f:
                             try:
-                                iso_obj.get_file_from_iso_fp(src_iso_path, f)
+                                # Use the same path type for extraction
+                                if path_type == "joliet_path":
+                                    iso_obj.get_file_from_iso_fp(
+                                        f, joliet_path=src_iso_path
+                                    )
+                                elif path_type == "rr_name":
+                                    iso_obj.get_file_from_iso_fp(
+                                        f, rr_name=src_iso_path
+                                    )
+                                else:
+                                    iso_obj.get_file_from_iso_fp(
+                                        f, iso_path=src_iso_path
+                                    )
                             except Exception as exc:
                                 logger.error(
                                     "Failed to extract %s from ISO: %s",
@@ -134,8 +163,24 @@ def extract_from_archive(
                                     exc,
                                 )
 
-            # Start extraction at root
-            _extract_iso_dir(iso, "/", tmpdir)
+            # Start extraction at root - detect which path type to use
+            # Try in order: ISO9660, Joliet, Rock Ridge
+            path_type = "iso_path"
+            for test_type in ["iso_path", "joliet_path", "rr_name"]:
+                try:
+                    if test_type == "joliet_path":
+                        iso.list_children(joliet_path="/")
+                    elif test_type == "rr_name":
+                        iso.list_children(rr_name="/")
+                    else:
+                        iso.list_children(iso_path="/")
+                    path_type = test_type
+                    logger.debug("Using ISO path type: %s", path_type)
+                    break
+                except Exception:
+                    continue
+
+            _extract_iso_dir(iso, "/", tmpdir, path_type)
         finally:
             iso.close()
     else:
