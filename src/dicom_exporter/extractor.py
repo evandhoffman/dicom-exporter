@@ -157,14 +157,76 @@ def extract_from_archive(
             f for f in os.listdir(out_dir) if os.path.isfile(os.path.join(out_dir, f))
         ]
         if existing_files:
-            logger.warning(
-                "Output directory already contains %d file(s) and "
-                "overwrite=False; skipping extraction: %s",
-                len(existing_files),
-                out_dir,
-            )
-            # Return the existing files
-            return [os.path.join(out_dir, f) for f in existing_files]
+            # If PNG conversion is requested, check if we need to convert
+            if convert_to_png:
+                export_dir = os.path.join(out_dir, "export")
+                # Check if export dir exists and has PNG files
+                if os.path.exists(export_dir):
+                    existing_pngs = set(
+                        os.path.splitext(f)[0]
+                        for f in os.listdir(export_dir)
+                        if f.endswith(".png")
+                    )
+                    # Check if all DICOM files have corresponding PNGs
+                    need_conversion = []
+                    for fname in existing_files:
+                        base_name = os.path.splitext(fname)[0]
+                        if base_name not in existing_pngs:
+                            src = os.path.join(out_dir, fname)
+                            if is_dicom_file(src):
+                                # Check if file has pixel data before adding
+                                try:
+                                    ds = pydicom.dcmread(src)
+                                    if hasattr(ds, "pixel_array"):
+                                        need_conversion.append(fname)
+                                except Exception:
+                                    pass
+                    
+                    if not need_conversion:
+                        logger.warning(
+                            "Output directory already contains %d file(s) "
+                            "with %d PNG(s); skipping: %s",
+                            len(existing_files),
+                            len(existing_pngs),
+                            out_dir,
+                        )
+                        return [os.path.join(out_dir, f) for f in existing_files]
+                    
+                    # Convert missing PNGs only
+                    logger.info(
+                        "Converting %d missing PNG file(s)",
+                        len(need_conversion),
+                    )
+                    for fname in need_conversion:
+                        src = os.path.join(out_dir, fname)
+                        base_name = os.path.splitext(fname)[0]
+                        png_path = os.path.join(export_dir, f"{base_name}.png")
+                        convert_dicom_to_png(src, png_path)
+                    return [os.path.join(out_dir, f) for f in existing_files]
+                
+                # Export dir doesn't exist, convert all files
+                logger.info(
+                    "DICOM files exist but PNG conversion needed, "
+                    "converting %d file(s)",
+                    len(existing_files),
+                )
+                os.makedirs(export_dir, exist_ok=True)
+                for fname in existing_files:
+                    src = os.path.join(out_dir, fname)
+                    if is_dicom_file(src):
+                        base_name = os.path.splitext(fname)[0]
+                        png_path = os.path.join(export_dir, f"{base_name}.png")
+                        convert_dicom_to_png(src, png_path)
+                return [os.path.join(out_dir, f) for f in existing_files]
+            else:
+                logger.warning(
+                    "Output directory already contains %d file(s) and "
+                    "overwrite=False; skipping extraction: %s",
+                    len(existing_files),
+                    out_dir,
+                )
+                # Return the existing files
+                return [os.path.join(out_dir, f) for f in existing_files]
 
     base = os.path.splitext(os.path.basename(input_path))[0]
     ext = os.path.splitext(input_path)[1].lower()
