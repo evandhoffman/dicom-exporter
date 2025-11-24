@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import tempfile
 from typing import List
 
 from .extractor import extract_from_zip
@@ -28,8 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir",
         dest="output_dir",
-        required=True,
-        help="Destination directory for extracted DICOM files",
+        required=False,
+        help="Destination directory for extracted DICOM files "
+        "(default: temp dir named after input file)",
     )
     parser.add_argument(
         "--overwrite",
@@ -65,16 +67,36 @@ def main(argv: List[str] | None = None) -> int:
         logger.error("Input file must have extension .zip or .iso (case-insensitive)")
         return 2
 
+    # Determine output directory
+    if args.output_dir:
+        output_dir = args.output_dir
+        png_export_dir = None  # Will use default /export subdir
+    else:
+        # Create default output directory based on input file
+        base = os.path.splitext(os.path.basename(args.input_file))[0]
+        if ext == ".zip":
+            output_dir = os.path.join(tempfile.gettempdir(), f"{base}_zip")
+            png_export_dir = None  # Will use default /export subdir
+        else:  # .iso
+            output_dir = os.path.join(tempfile.gettempdir(), f"{base}_iso")
+            # PNG export goes to same dir as ISO with _export suffix
+            if args.convert_to_png:
+                input_dir = os.path.dirname(os.path.abspath(args.input_file))
+                png_export_dir = os.path.join(input_dir, f"{base}_iso_export")
+            else:
+                png_export_dir = None
+
     extracted = extract_from_zip(
         args.input_file,
-        args.output_dir,
+        output_dir,
         overwrite=args.overwrite,
         convert_to_png=args.convert_to_png,
+        png_export_dir=png_export_dir,
     )
 
     if extracted:
         logger.warning(
-            "Completed: %d DICOM file(s) in %s", len(extracted), args.output_dir
+            "Completed: %d DICOM file(s) in %s", len(extracted), output_dir
         )
         return 0
     else:

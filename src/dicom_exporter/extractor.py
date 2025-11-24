@@ -135,7 +135,11 @@ def convert_dicom_to_png(dicom_path: str, png_path: str) -> bool:
 
 
 def extract_from_archive(
-    input_path: str, out_dir: str, overwrite: bool = False, convert_to_png: bool = False
+    input_path: str,
+    out_dir: str,
+    overwrite: bool = False,
+    convert_to_png: bool = False,
+    png_export_dir: str | None = None,
 ) -> List[str]:
     """Extract DICOM files from a ZIP or ISO archive into `out_dir`.
 
@@ -145,6 +149,13 @@ def extract_from_archive(
 
     If the output directory already contains files and overwrite=False, the
     extraction is skipped entirely.
+
+    Args:
+        input_path: Path to ZIP or ISO file
+        out_dir: Directory where DICOM files will be extracted
+        overwrite: If True, overwrite existing files
+        convert_to_png: If True, convert DICOM files to PNG with metadata overlay
+        png_export_dir: Custom directory for PNG export (default: out_dir/export)
 
     Returns a list of written file paths.
     """
@@ -159,7 +170,10 @@ def extract_from_archive(
         if existing_files:
             # If PNG conversion is requested, check if we need to convert
             if convert_to_png:
-                export_dir = os.path.join(out_dir, "export")
+                if png_export_dir:
+                    export_dir = png_export_dir
+                else:
+                    export_dir = os.path.join(out_dir, "export")
                 # Check if export dir exists and has PNG files
                 if os.path.exists(export_dir):
                     existing_pngs = set(
@@ -354,7 +368,10 @@ def extract_from_archive(
     # Create export subdirectory if converting to PNG
     export_dir = None
     if convert_to_png:
-        export_dir = os.path.join(out_dir, "export")
+        if png_export_dir:
+            export_dir = png_export_dir
+        else:
+            export_dir = os.path.join(out_dir, "export")
         os.makedirs(export_dir, exist_ok=True)
         logger.info("Created export directory: %s", export_dir)
 
