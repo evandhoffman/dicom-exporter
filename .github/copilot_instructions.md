@@ -148,6 +148,18 @@ Example contract for functions:
   environment.
 
 
+## Import conventions
+
+- All imports must be placed at the top of the file. Never use conditional imports
+  (imports inside `if`, `try`, or function bodies) unless absolutely necessary for
+  circular dependency resolution.
+- All dependencies should be imported directly at the top. If a dependency is missing,
+  the import will fail immediately with a clear error rather than deferring the failure
+  to runtime. This ensures users know about missing dependencies as soon as they try
+  to use the package.
+- Group imports in the standard order: stdlib, third-party, local/relative. Use
+  `isort` to enforce this ordering automatically.
+
 ## Contribution notes
 
 - When opening a PR, include a brief description of changes and which tests were added

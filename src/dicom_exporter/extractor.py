@@ -19,6 +19,7 @@ import tempfile
 import zipfile
 from typing import List
 
+import pycdlib
 import pydicom
 from pydicom.errors import InvalidDicomError
 
@@ -92,14 +93,12 @@ def extract_from_archive(
             zf.extractall(tmpdir)
     elif ext == ".iso":
         logger.info("Extracting ISO archive %s -> %s", input_path, tmpdir)
+        iso = pycdlib.PyCdlib()
         try:
-            import pycdlib
-
-            iso = pycdlib.PyCdlib()
             iso.open(input_path)
 
             def _extract_iso_dir(
-                iso_obj: "pycdlib.PyCdlib", iso_path: str, out_path: str
+                iso_obj: pycdlib.PyCdlib, iso_path: str, out_path: str
             ) -> None:
                 try:
                     children = iso_obj.list_children(iso_path)
@@ -137,10 +136,8 @@ def extract_from_archive(
 
             # Start extraction at root
             _extract_iso_dir(iso, "/", tmpdir)
+        finally:
             iso.close()
-        except ImportError:
-            logger.error("pycdlib required for ISO extraction but not installed")
-            raise
     else:
         raise ValueError("Unsupported archive type: %s" % ext)
 
