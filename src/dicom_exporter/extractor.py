@@ -296,10 +296,12 @@ def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
             z-index: 1000;
             left: 0;
             top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.95);
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0,0,0,0.98);
             animation: fadeIn 0.3s;
+            align-items: center;
+            justify-content: center;
         }
         @keyframes fadeIn {
             from { opacity: 0; }
@@ -307,29 +309,61 @@ def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
         }
         .modal-content {
             position: relative;
-            margin: auto;
-            max-width: 90%;
-            max-height: 90%;
-            top: 50%;
-            transform: translateY(-50%);
+            max-width: 95vw;
+            max-height: 95vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
         .modal-content img {
-            width: 100%;
-            height: auto;
+            max-width: 95vw;
+            max-height: 90vh;
+            object-fit: contain;
             border-radius: 8px;
         }
+        .modal-caption {
+            color: white;
+            padding: 15px;
+            font-size: 1.2em;
+            text-align: center;
+        }
         .close {
-            position: absolute;
+            position: fixed;
             top: 20px;
             right: 40px;
             color: #fff;
             font-size: 50px;
             font-weight: bold;
             cursor: pointer;
-            z-index: 1001;
+            z-index: 1002;
+            transition: color 0.3s;
         }
         .close:hover {
             color: #667eea;
+        }
+        .nav-button {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.3);
+            font-size: 40px;
+            padding: 20px 25px;
+            cursor: pointer;
+            z-index: 1002;
+            transition: all 0.3s;
+            border-radius: 8px;
+        }
+        .nav-button:hover {
+            background: rgba(102,126,234,0.8);
+            border-color: #667eea;
+        }
+        .nav-button.prev {
+            left: 20px;
+        }
+        .nav-button.next {
+            right: 20px;
         }
         .stats {
             text-align: center;
@@ -396,27 +430,52 @@ def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
     </div>
 
     <!-- Modal for full-size image -->
-    <div id="imageModal" class="modal" onclick="closeModal()">
-        <span class="close">&times;</span>
+    <div id="imageModal" class="modal" onclick="event.target === this && closeModal()">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <button class="nav-button prev" onclick="navigateImage(-1); event.stopPropagation();">&#10094;</button>
+        <button class="nav-button next" onclick="navigateImage(1); event.stopPropagation();">&#10095;</button>
         <div class="modal-content">
-            <img id="modalImage" src="" alt="Full size image">
+            <img id="modalImage" src="" alt="Full size image" onclick="event.stopPropagation();">
+            <div class="modal-caption" id="modalCaption"></div>
         </div>
     </div>
 
     <script>
+        const allImages = [{', '.join([f'"{img["filename"]}"' for img in image_data])}];
+        let currentImageIndex = 0;
+
         function openModal(imageSrc) {{
-            document.getElementById('imageModal').style.display = 'block';
-            document.getElementById('modalImage').src = imageSrc;
+            currentImageIndex = allImages.indexOf(imageSrc);
+            document.getElementById('imageModal').style.display = 'flex';
+            showImage(currentImageIndex);
         }}
 
         function closeModal() {{
             document.getElementById('imageModal').style.display = 'none';
         }}
 
-        // Close modal with Escape key
+        function navigateImage(direction) {{
+            currentImageIndex = (currentImageIndex + direction + allImages.length) % allImages.length;
+            showImage(currentImageIndex);
+        }}
+
+        function showImage(index) {{
+            const img = allImages[index];
+            document.getElementById('modalImage').src = img;
+            document.getElementById('modalCaption').innerHTML = `Image ${{index + 1}} of ${{allImages.length}}`;
+        }}
+
+        // Keyboard navigation
         document.addEventListener('keydown', function(event) {{
-            if (event.key === 'Escape') {{
-                closeModal();
+            const modal = document.getElementById('imageModal');
+            if (modal.style.display === 'flex') {{
+                if (event.key === 'Escape') {{
+                    closeModal();
+                }} else if (event.key === 'ArrowLeft') {{
+                    navigateImage(-1);
+                }} else if (event.key === 'ArrowRight') {{
+                    navigateImage(1);
+                }}
             }}
         }});
     </script>
