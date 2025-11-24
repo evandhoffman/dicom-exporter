@@ -36,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Overwrite existing files in output dir",
     )
+    parser.add_argument(
+        "--convert-to-png",
+        dest="convert_to_png",
+        action="store_true",
+        help="Convert DICOM files to PNG with metadata overlay in /export subdirectory",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
     return parser
 
@@ -60,7 +66,10 @@ def main(argv: List[str] | None = None) -> int:
         return 2
 
     extracted = extract_from_zip(
-        args.input_file, args.output_dir, overwrite=args.overwrite
+        args.input_file,
+        args.output_dir,
+        overwrite=args.overwrite,
+        convert_to_png=args.convert_to_png,
     )
 
     if extracted:

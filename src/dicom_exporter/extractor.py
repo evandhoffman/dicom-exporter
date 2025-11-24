@@ -17,10 +17,12 @@ import os
 import shutil
 import tempfile
 import zipfile
-from typing import List
+from typing import List, Tuple
 
+import numpy as np
 import pycdlib
 import pydicom
+from PIL import Image, ImageDraw, ImageFont
 from pydicom.errors import InvalidDicomError
 
 logger = logging.getLogger(__name__)
@@ -49,8 +51,91 @@ def _unique_path(out_dir: str, filename: str) -> str:
     return os.path.join(out_dir, candidate)
 
 
+def convert_dicom_to_png(dicom_path: str, png_path: str) -> bool:
+    """Convert a DICOM file to PNG with metadata overlay.
+
+    Args:
+        dicom_path: Path to the DICOM file
+        png_path: Path where the PNG should be saved
+
+    Returns:
+        True if conversion successful, False otherwise
+    """
+    try:
+        # Read the DICOM file
+        ds = pydicom.dcmread(dicom_path)
+
+        # Get pixel array and normalize to 0-255
+        pixel_array = ds.pixel_array
+
+        # Normalize the image data
+        pixel_array = pixel_array.astype(float)
+        pixel_array = (
+            (pixel_array - pixel_array.min())
+            / (pixel_array.max() - pixel_array.min())
+            * 255.0
+        )
+        pixel_array = pixel_array.astype(np.uint8)
+
+        # Convert to PIL Image
+        image = Image.fromarray(pixel_array)
+
+        # Convert to RGB to allow colored text overlay
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        # Create drawing context
+        draw = ImageDraw.Draw(image)
+
+        # Try to use a reasonable font, fall back to default
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 12)
+        except Exception:
+            try:
+                font = ImageFont.truetype(
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12
+                )
+            except Exception:
+                font = ImageFont.load_default()
+
+        # Collect metadata to overlay
+        metadata_lines = []
+
+        # Add key DICOM metadata
+        metadata_fields = [
+            ("PatientName", "Patient"),
+            ("PatientID", "ID"),
+            ("StudyDate", "Study Date"),
+            ("SeriesDescription", "Series"),
+            ("Modality", "Modality"),
+            ("SliceLocation", "Slice"),
+            ("InstanceNumber", "Instance"),
+        ]
+
+        for dicom_tag, label in metadata_fields:
+            if hasattr(ds, dicom_tag):
+                value = getattr(ds, dicom_tag)
+                if value:
+                    metadata_lines.append(f"{label}: {value}")
+
+        # Draw metadata on the image
+        y_offset = 10
+        for line in metadata_lines:
+            draw.text((10, y_offset), line, fill=(255, 255, 0), font=font)
+            y_offset += 15
+
+        # Save as PNG
+        image.save(png_path, "PNG")
+        logger.info("Converted to PNG: %s", png_path)
+        return True
+
+    except Exception as e:
+        logger.error("Failed to convert %s to PNG: %s", dicom_path, e)
+        return False
+
+
 def extract_from_archive(
-    input_path: str, out_dir: str, overwrite: bool = False
+    input_path: str, out_dir: str, overwrite: bool = False, convert_to_png: bool = False
 ) -> List[str]:
     """Extract DICOM files from a ZIP or ISO archive into `out_dir`.
 
@@ -204,6 +289,13 @@ def extract_from_archive(
     else:
         raise ValueError("Unsupported archive type: %s" % ext)
 
+    # Create export subdirectory if converting to PNG
+    export_dir = None
+    if convert_to_png:
+        export_dir = os.path.join(out_dir, "export")
+        os.makedirs(export_dir, exist_ok=True)
+        logger.info("Created export directory: %s", export_dir)
+
     # Walk the extracted tree and copy DICOM files into out_dir
     for root, _dirs, files in os.walk(tmpdir):
         for fname in files:
@@ -219,7 +311,7 @@ def extract_from_archive(
                         extracted_files.append(dest)
                         logger.info("Overwritten: %s", dest)
                     else:
-                        # File exists and we're not overwriting, so find unique name
+                        # File exists, find unique name
                         dest = _unique_path(out_dir, os.path.basename(rel_path))
                         shutil.copy2(src, dest)
                         extracted_files.append(dest)
@@ -228,6 +320,13 @@ def extract_from_archive(
                     shutil.copy2(src, dest)
                     extracted_files.append(dest)
                     logger.info("Extracted: %s", dest)
+
+                # Convert to PNG if requested
+                if convert_to_png and export_dir:
+                    base_name = os.path.splitext(os.path.basename(dest))[0]
+                    png_path = os.path.join(export_dir, f"{base_name}.png")
+                    convert_dicom_to_png(dest, png_path)
+
             else:
                 logger.debug("Skipping non-DICOM file: %s", src)
 

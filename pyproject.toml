@@ -10,10 +10,10 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "pydicom>=2.3.0",
+    "pycdlib>=1.0.0",
+    "numpy>=1.24.0",
+    "Pillow>=10.0.0",
 ]
-
-[project.optional-dependencies]
-iso = ["pycdlib>=1.0.0"]
 
 [tool.black]
 line-length = 88

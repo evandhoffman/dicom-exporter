@@ -9,4 +9,8 @@ pre-commit>=3.0.0
 # ISO support
 pycdlib>=1.0.0
 
+# PNG conversion
+numpy>=1.24.0
+Pillow>=10.0.0
+
 
