@@ -58,10 +58,28 @@ def extract_from_archive(
     system temp dir (for example `/tmp/<base>_zip/` or `/tmp/<base>_iso/`). The
     extracted tree is then scanned and DICOM files are copied into `out_dir`.
 
+    If the output directory already contains files and overwrite=False, the
+    extraction is skipped entirely.
+
     Returns a list of written file paths.
     """
     os.makedirs(out_dir, exist_ok=True)
     extracted_files: List[str] = []
+
+    # Check if output directory already has content
+    if not overwrite and os.path.exists(out_dir):
+        existing_files = [
+            f for f in os.listdir(out_dir) if os.path.isfile(os.path.join(out_dir, f))
+        ]
+        if existing_files:
+            logger.warning(
+                "Output directory already contains %d file(s) and "
+                "overwrite=False; skipping extraction: %s",
+                len(existing_files),
+                out_dir,
+            )
+            # Return the existing files
+            return [os.path.join(out_dir, f) for f in existing_files]
 
     base = os.path.splitext(os.path.basename(input_path))[0]
     ext = os.path.splitext(input_path)[1].lower()
@@ -193,11 +211,23 @@ def extract_from_archive(
             if is_dicom_file(src):
                 rel_path = os.path.relpath(src, tmpdir)
                 dest = os.path.join(out_dir, os.path.basename(rel_path))
-                if os.path.exists(dest) and not overwrite:
-                    dest = _unique_path(out_dir, os.path.basename(rel_path))
-                shutil.copy2(src, dest)
-                extracted_files.append(dest)
-                logger.info("Extracted DICOM: %s -> %s", src, dest)
+
+                # Determine action: extracted, overwritten, or skipped
+                if os.path.exists(dest):
+                    if overwrite:
+                        shutil.copy2(src, dest)
+                        extracted_files.append(dest)
+                        logger.info("Overwritten: %s", dest)
+                    else:
+                        # File exists and we're not overwriting, so find unique name
+                        dest = _unique_path(out_dir, os.path.basename(rel_path))
+                        shutil.copy2(src, dest)
+                        extracted_files.append(dest)
+                        logger.info("Extracted (renamed): %s", dest)
+                else:
+                    shutil.copy2(src, dest)
+                    extracted_files.append(dest)
+                    logger.info("Extracted: %s", dest)
             else:
                 logger.debug("Skipping non-DICOM file: %s", src)
 
