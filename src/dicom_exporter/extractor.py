@@ -134,6 +134,304 @@ def convert_dicom_to_png(dicom_path: str, png_path: str) -> bool:
         return False
 
 
+def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
+    """Generate an HTML index.html to display all PNG images.
+
+    Args:
+        export_dir: Directory containing PNG files
+        dicom_files: List of DICOM source file paths
+    """
+    # Collect metadata from DICOM files
+    image_data = []
+    for dicom_path in dicom_files:
+        try:
+            ds = pydicom.dcmread(dicom_path)
+            # Check if file has pixel data
+            if not hasattr(ds, "pixel_array"):
+                continue
+
+            base_name = os.path.splitext(os.path.basename(dicom_path))[0]
+            png_name = f"{base_name}.png"
+            png_path = os.path.join(export_dir, png_name)
+
+            # Only include if PNG was actually created
+            if not os.path.exists(png_path):
+                continue
+
+            image_data.append(
+                {
+                    "filename": png_name,
+                    "patient_name": str(getattr(ds, "PatientName", "Unknown")),
+                    "patient_id": str(getattr(ds, "PatientID", "N/A")),
+                    "study_date": str(getattr(ds, "StudyDate", "N/A")),
+                    "series_description": str(
+                        getattr(ds, "SeriesDescription", "N/A")
+                    ),
+                    "series_number": int(getattr(ds, "SeriesNumber", 0)),
+                    "modality": str(getattr(ds, "Modality", "N/A")),
+                    "slice_location": float(
+                        getattr(ds, "SliceLocation", 0.0)
+                    ),
+                    "instance_number": int(getattr(ds, "InstanceNumber", 0)),
+                }
+            )
+        except Exception as e:
+            logger.debug("Skipping %s for HTML index: %s", dicom_path, e)
+            continue
+
+    if not image_data:
+        logger.warning("No images found for HTML index generation")
+        return
+
+    # Sort by series number, then slice location, then instance number
+    image_data.sort(
+        key=lambda x: (x["series_number"], x["slice_location"], x["instance_number"])
+    )
+
+    # Group by series
+    series_groups = {}
+    for img in image_data:
+        series_key = (img["series_number"], img["series_description"])
+        if series_key not in series_groups:
+            series_groups[series_key] = []
+        series_groups[series_key].append(img)
+
+    # Generate HTML
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DICOM Image Gallery</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #2d3748;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            text-align: center;
+        }
+        .patient-info {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border-left: 4px solid #667eea;
+        }
+        .patient-info p {
+            margin: 5px 0;
+            color: #4a5568;
+            font-size: 1.1em;
+        }
+        .series-section {
+            margin-bottom: 50px;
+        }
+        .series-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+            font-weight: 600;
+        }
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 20px;
+        }
+        .image-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .image-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 20px rgba(0,0,0,0.2);
+        }
+        .image-card img {
+            width: 100%;
+            height: 250px;
+            object-fit: contain;
+            background: #000;
+            cursor: pointer;
+        }
+        .image-caption {
+            padding: 15px;
+            background: #f7fafc;
+        }
+        .image-caption p {
+            margin: 5px 0;
+            font-size: 0.9em;
+            color: #4a5568;
+        }
+        .caption-label {
+            font-weight: 600;
+            color: #2d3748;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.95);
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .modal-content {
+            position: relative;
+            margin: auto;
+            max-width: 90%;
+            max-height: 90%;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        .modal-content img {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+        .close {
+            position: absolute;
+            top: 20px;
+            right: 40px;
+            color: #fff;
+            font-size: 50px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 1001;
+        }
+        .close:hover {
+            color: #667eea;
+        }
+        .stats {
+            text-align: center;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 8px;
+            margin-top: 30px;
+        }
+        .stats p {
+            font-size: 1.1em;
+            color: #4a5568;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏥 DICOM Image Gallery</h1>
+"""
+
+    # Add patient info
+    if image_data:
+        first_img = image_data[0]
+        html += f"""
+        <div class="patient-info">
+            <p><span class="caption-label">Patient:</span> {first_img['patient_name']}</p>
+            <p><span class="caption-label">Patient ID:</span> {first_img['patient_id']}</p>
+            <p><span class="caption-label">Study Date:</span> {first_img['study_date']}</p>
+            <p><span class="caption-label">Modality:</span> {first_img['modality']}</p>
+        </div>
+"""
+
+    # Add series sections
+    for (series_num, series_desc), images in sorted(series_groups.items()):
+        html += f"""
+        <div class="series-section">
+            <div class="series-header">
+                Series {series_num}: {series_desc} ({len(images)} images)
+            </div>
+            <div class="image-grid">
+"""
+        for img in images:
+            html += f"""
+                <div class="image-card">
+                    <img src="{img['filename']}" alt="Slice {img['slice_location']}" 
+                         onclick="openModal('{img['filename']}')" />
+                    <div class="image-caption">
+                        <p><span class="caption-label">Instance:</span> {img['instance_number']}</p>
+                        <p><span class="caption-label">Slice Location:</span> {img['slice_location']:.2f}</p>
+                    </div>
+                </div>
+"""
+        html += """
+            </div>
+        </div>
+"""
+
+    # Add stats
+    html += f"""
+        <div class="stats">
+            <p><span class="caption-label">Total Images:</span> {len(image_data)}</p>
+            <p><span class="caption-label">Series Count:</span> {len(series_groups)}</p>
+        </div>
+    </div>
+
+    <!-- Modal for full-size image -->
+    <div id="imageModal" class="modal" onclick="closeModal()">
+        <span class="close">&times;</span>
+        <div class="modal-content">
+            <img id="modalImage" src="" alt="Full size image">
+        </div>
+    </div>
+
+    <script>
+        function openModal(imageSrc) {{
+            document.getElementById('imageModal').style.display = 'block';
+            document.getElementById('modalImage').src = imageSrc;
+        }}
+
+        function closeModal() {{
+            document.getElementById('imageModal').style.display = 'none';
+        }}
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(event) {{
+            if (event.key === 'Escape') {{
+                closeModal();
+            }}
+        }});
+    </script>
+</body>
+</html>
+"""
+
+    # Write HTML file
+    index_path = os.path.join(export_dir, "index.html")
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    logger.info("Generated HTML index: %s", index_path)
+
+
 def extract_from_archive(
     input_path: str,
     out_dir: str,
@@ -204,7 +502,12 @@ def extract_from_archive(
                             len(existing_pngs),
                             out_dir,
                         )
-                        return [os.path.join(out_dir, f) for f in existing_files]
+                        # Regenerate HTML index even when skipping
+                        existing_paths = [
+                            os.path.join(out_dir, f) for f in existing_files
+                        ]
+                        generate_html_index(export_dir, existing_paths)
+                        return existing_paths
                     
                     # Convert missing PNGs only
                     logger.info(
@@ -216,7 +519,11 @@ def extract_from_archive(
                         base_name = os.path.splitext(fname)[0]
                         png_path = os.path.join(export_dir, f"{base_name}.png")
                         convert_dicom_to_png(src, png_path)
-                    return [os.path.join(out_dir, f) for f in existing_files]
+                    
+                    # Generate HTML index
+                    existing_paths = [os.path.join(out_dir, f) for f in existing_files]
+                    generate_html_index(export_dir, existing_paths)
+                    return existing_paths
                 
                 # Export dir doesn't exist, convert all files
                 logger.info(
@@ -231,7 +538,11 @@ def extract_from_archive(
                         base_name = os.path.splitext(fname)[0]
                         png_path = os.path.join(export_dir, f"{base_name}.png")
                         convert_dicom_to_png(src, png_path)
-                return [os.path.join(out_dir, f) for f in existing_files]
+                
+                # Generate HTML index
+                existing_paths = [os.path.join(out_dir, f) for f in existing_files]
+                generate_html_index(export_dir, existing_paths)
+                return existing_paths
             else:
                 logger.warning(
                     "Output directory already contains %d file(s) and "
@@ -408,6 +719,10 @@ def extract_from_archive(
 
             else:
                 logger.debug("Skipping non-DICOM file: %s", src)
+
+    # Generate HTML index if PNGs were created
+    if convert_to_png and export_dir and extracted_files:
+        generate_html_index(export_dir, extracted_files)
 
     return extracted_files
 
