@@ -169,6 +169,7 @@ The tool uses Python's logging module. All operations are logged at appropriate 
 ## Supported Formats
 
 - **Input**: ZIP and ISO archives
+  - ⚠️ **Note**: ISO format has been tested extensively. ZIP format support is implemented but not yet tested in production.
 - **DICOM Files**: Validated using pydicom
 - **Output Images**: PNG format with RGB conversion
 - **Metadata**: Extracted from DICOM headers
