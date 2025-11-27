@@ -51,15 +51,92 @@ def _unique_path(out_dir: str, filename: str) -> str:
     return os.path.join(out_dir, candidate)
 
 
-def convert_dicom_to_png(dicom_path: str, png_path: str) -> bool:
+def _sanitize_filename(name: str) -> str:
+    """Sanitize a string for use in a filename.
+
+    Removes or replaces characters that are invalid in filenames.
+    """
+    # Replace common problematic characters
+    replacements = {
+        "/": "-",
+        "\\": "-",
+        ":": "-",
+        "*": "",
+        "?": "",
+        '"': "",
+        "<": "",
+        ">": "",
+        "|": "-",
+        " ": "_",
+        "^": "",
+    }
+    result = str(name)
+    for char, replacement in replacements.items():
+        result = result.replace(char, replacement)
+    # Remove any remaining non-ASCII characters
+    result = "".join(c for c in result if c.isalnum() or c in "_-.")
+    return result
+
+
+def generate_png_filename(dicom_path: str, original_filename: str) -> str:
+    """Generate a descriptive PNG filename from DICOM metadata.
+
+    Creates filename like:
+    {PatientName}_{StudyDate}_{Modality}_{SeriesDescription}_{InstanceNumber}_{original}.png
+
+    Args:
+        dicom_path: Path to the DICOM file
+        original_filename: Original DICOM filename (used as fallback)
+
+    Returns:
+        Generated PNG filename (without directory)
+    """
+    try:
+        ds = pydicom.dcmread(dicom_path, stop_before_pixels=True)
+
+        # Extract metadata components
+        patient_name = _sanitize_filename(
+            str(getattr(ds, "PatientName", "Unknown"))
+        )
+        study_date = str(getattr(ds, "StudyDate", "00000000"))
+        modality = _sanitize_filename(
+            str(getattr(ds, "Modality", "UNK"))
+        )
+        series_desc = _sanitize_filename(
+            str(getattr(ds, "SeriesDescription", "NoSeries"))
+        )
+        instance_num = int(getattr(ds, "InstanceNumber", 0))
+
+        # Get original base name for reference
+        orig_base = os.path.splitext(original_filename)[0]
+
+        # Build descriptive filename
+        png_name = (
+            f"{patient_name}_{study_date}_{modality}_"
+            f"{series_desc}_{instance_num:04d}_{orig_base}.png"
+        )
+        return png_name
+
+    except Exception as e:
+        logger.debug("Could not generate PNG filename from metadata: %s", e)
+        # Fall back to original filename
+        orig_base = os.path.splitext(original_filename)[0]
+        return f"{orig_base}.png"
+
+
+def convert_dicom_to_png(
+    dicom_path: str, png_path: str | None = None, export_dir: str | None = None
+) -> str | None:
     """Convert a DICOM file to PNG with metadata overlay.
 
     Args:
         dicom_path: Path to the DICOM file
-        png_path: Path where the PNG should be saved
+        png_path: Full path where the PNG should be saved (optional)
+        export_dir: Directory for PNG output; if provided and png_path is None,
+                    filename will be auto-generated from DICOM metadata
 
     Returns:
-        True if conversion successful, False otherwise
+        Path to saved PNG file if successful, None otherwise
     """
     try:
         # Read the DICOM file
@@ -124,14 +201,23 @@ def convert_dicom_to_png(dicom_path: str, png_path: str) -> bool:
             draw.text((10, y_offset), line, fill=(255, 255, 0), font=font)
             y_offset += 15
 
+        # Determine output path
+        if png_path is None and export_dir is not None:
+            original_filename = os.path.basename(dicom_path)
+            png_filename = generate_png_filename(dicom_path, original_filename)
+            png_path = _unique_path(export_dir, png_filename)
+        elif png_path is None:
+            logger.error("Either png_path or export_dir must be provided")
+            return None
+
         # Save as PNG
         image.save(png_path, "PNG")
         logger.info("Converted to PNG: %s", png_path)
-        return True
+        return png_path
 
     except Exception as e:
         logger.error("Failed to convert %s to PNG: %s", dicom_path, e)
-        return False
+        return None
 
 
 def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
@@ -141,21 +227,43 @@ def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
         export_dir: Directory containing PNG files
         dicom_files: List of DICOM source file paths
     """
-    # Collect metadata from DICOM files
-    image_data = []
+    # Build a map of original DICOM base names to their full paths
+    dicom_map = {}
     for dicom_path in dicom_files:
+        base_name = os.path.splitext(os.path.basename(dicom_path))[0]
+        dicom_map[base_name] = dicom_path
+
+    # Scan export directory for PNG files
+    png_files = [f for f in os.listdir(export_dir) if f.endswith(".png")]
+
+    # Collect metadata from DICOM files for each PNG
+    image_data = []
+    for png_name in png_files:
+        # Try to find matching DICOM file
+        # PNG names are like: PatientName_StudyDate_0001_IMG0001.png
+        # The original filename is the last part before .png
+        png_base = os.path.splitext(png_name)[0]
+
+        # Find matching DICOM by checking if original name is in PNG name
+        matched_dicom = None
+        for orig_base, dicom_path in dicom_map.items():
+            if png_base.endswith(f"_{orig_base}"):
+                matched_dicom = dicom_path
+                break
+
+        if not matched_dicom:
+            # Fall back to old naming convention (base_name.png)
+            if png_base in dicom_map:
+                matched_dicom = dicom_map[png_base]
+
+        if not matched_dicom:
+            logger.debug("No DICOM match found for PNG: %s", png_name)
+            continue
+
         try:
-            ds = pydicom.dcmread(dicom_path)
+            ds = pydicom.dcmread(matched_dicom)
             # Check if file has pixel data
             if not hasattr(ds, "pixel_array"):
-                continue
-
-            base_name = os.path.splitext(os.path.basename(dicom_path))[0]
-            png_name = f"{base_name}.png"
-            png_path = os.path.join(export_dir, png_name)
-
-            # Only include if PNG was actually created
-            if not os.path.exists(png_path):
                 continue
 
             image_data.append(
@@ -176,7 +284,7 @@ def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
                 }
             )
         except Exception as e:
-            logger.debug("Skipping %s for HTML index: %s", dicom_path, e)
+            logger.debug("Skipping %s for HTML index: %s", matched_dicom, e)
             continue
 
     if not image_data:
@@ -241,8 +349,57 @@ def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
             color: #4a5568;
             font-size: 1.1em;
         }
+        .toc {
+            background: #f7fafc;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border-left: 4px solid #764ba2;
+        }
+        .toc h2 {
+            color: #2d3748;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        .toc-series {
+            margin-bottom: 15px;
+        }
+        .toc-series-link {
+            display: block;
+            color: #667eea;
+            font-weight: 600;
+            font-size: 1.1em;
+            text-decoration: none;
+            margin-bottom: 8px;
+            transition: color 0.3s;
+        }
+        .toc-series-link:hover {
+            color: #764ba2;
+        }
+        .toc-images {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-left: 20px;
+        }
+        .toc-image-link {
+            background: white;
+            color: #4a5568;
+            padding: 5px 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 0.9em;
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s;
+        }
+        .toc-image-link:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
         .series-section {
             margin-bottom: 50px;
+            scroll-margin-top: 20px;
         }
         .series-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -265,10 +422,19 @@ def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
             overflow: hidden;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             transition: transform 0.3s ease, box-shadow 0.3s ease;
+            scroll-margin-top: 20px;
         }
         .image-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 12px 20px rgba(0,0,0,0.2);
+        }
+        .image-card:target {
+            box-shadow: 0 0 0 3px #667eea;
+            animation: highlight 2s ease;
+        }
+        @keyframes highlight {
+            0%, 100% { box-shadow: 0 0 0 3px #667eea; }
+            50% { box-shadow: 0 0 0 6px #764ba2; }
         }
         .image-card img {
             width: 100%;
@@ -298,7 +464,7 @@ def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
             top: 0;
             width: 100vw;
             height: 100vh;
-            background-color: rgba(0,0,0,0.98);
+            background-color: rgba(40,40,40,0.98);
             animation: fadeIn 0.3s;
             align-items: center;
             justify-content: center;
@@ -396,18 +562,49 @@ def generate_html_index(export_dir: str, dicom_files: List[str]) -> None:
         </div>
 """
 
+    # Add table of contents
+    html += """
+        <div class="toc">
+            <h2>📋 Table of Contents</h2>
+"""
+    for (series_num, series_desc), images in sorted(series_groups.items()):
+        series_id = f"series-{series_num}"
+        html += f"""
+            <div class="toc-series">
+                <a href="#{series_id}" class="toc-series-link">
+                    Series {series_num}: {series_desc} ({len(images)} images)
+                </a>
+                <div class="toc-images">
+"""
+        for img in images:
+            img_id = f"img-{img['filename'].replace('.png', '')}"
+            html += f"""
+                    <a href="#{img_id}" class="toc-image-link">
+                        Slice {img['slice_location']:.1f} (#{img['instance_number']})
+                    </a>
+"""
+        html += """
+                </div>
+            </div>
+"""
+    html += """
+        </div>
+"""
+
     # Add series sections
     for (series_num, series_desc), images in sorted(series_groups.items()):
+        series_id = f"series-{series_num}"
         html += f"""
-        <div class="series-section">
+        <div class="series-section" id="{series_id}">
             <div class="series-header">
                 Series {series_num}: {series_desc} ({len(images)} images)
             </div>
             <div class="image-grid">
 """
         for img in images:
+            img_id = f"img-{img['filename'].replace('.png', '')}"
             html += f"""
-                <div class="image-card">
+                <div class="image-card" id="{img_id}">
                     <img src="{img['filename']}" alt="Slice {img['slice_location']}" 
                          onclick="openModal('{img['filename']}')" />
                     <div class="image-caption">
@@ -575,9 +772,7 @@ def extract_from_archive(
                     )
                     for fname in need_conversion:
                         src = os.path.join(out_dir, fname)
-                        base_name = os.path.splitext(fname)[0]
-                        png_path = os.path.join(export_dir, f"{base_name}.png")
-                        convert_dicom_to_png(src, png_path)
+                        convert_dicom_to_png(src, export_dir=export_dir)
                     
                     # Generate HTML index
                     existing_paths = [os.path.join(out_dir, f) for f in existing_files]
@@ -594,9 +789,7 @@ def extract_from_archive(
                 for fname in existing_files:
                     src = os.path.join(out_dir, fname)
                     if is_dicom_file(src):
-                        base_name = os.path.splitext(fname)[0]
-                        png_path = os.path.join(export_dir, f"{base_name}.png")
-                        convert_dicom_to_png(src, png_path)
+                        convert_dicom_to_png(src, export_dir=export_dir)
                 
                 # Generate HTML index
                 existing_paths = [os.path.join(out_dir, f) for f in existing_files]
@@ -772,9 +965,7 @@ def extract_from_archive(
 
                 # Convert to PNG if requested
                 if convert_to_png and export_dir:
-                    base_name = os.path.splitext(os.path.basename(dest))[0]
-                    png_path = os.path.join(export_dir, f"{base_name}.png")
-                    convert_dicom_to_png(dest, png_path)
+                    convert_dicom_to_png(dest, export_dir=export_dir)
 
             else:
                 logger.debug("Skipping non-DICOM file: %s", src)
